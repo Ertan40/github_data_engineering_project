@@ -6,33 +6,21 @@ from sqlalchemy import URL, create_engine, text
 
 
 def get_engine():
-    # ED This is production ready:
-    # db_url = URL.create(
-    #     drivername="mssql+pyodbc",
-    #     username=os.getenv("MSSQL_USER"),
-    #     password=os.getenv("MSSQL_PASSWORD"),
-    #     host="localhost",
-    #     port=1433,
-    #     database="GitHubAnalyticsDB",
-    #     query={
-    #         "driver": os.getenv(
-    #             "MSSQL_DRIVER",
-    #             "ODBC Driver 18 for SQL Server"
-    #         ),
-    #         "TrustServerCertificate": "yes"
-    #     }
-    # )
+    # ED: use your credential details below:
     db_url = URL.create(
-        drivername='mssql+pyodbc',
-        username='sa',
-        password='MyStrong@Passw0rd',
-        host='localhost',
-        database='GitHubAnalyticsDB',
+        drivername="mssql+pyodbc",
+        username=os.getenv("MSSQL_USER"),
+        password=os.getenv("MSSQL_PASSWORD"),
+        host="localhost",
         port=1433,
+        database="GitHubAnalyticsDB",
         query={
-            "driver": "ODBC Driver 17 for SQL Server",  # no curly braces
-            "TrustServerCertificate": "yes",
-        },
+            "driver": os.getenv(
+                "MSSQL_DRIVER",
+                "ODBC Driver 17 for SQL Server"
+            ),
+            "TrustServerCertificate": "yes"
+        }
     )
 
     return create_engine(db_url)
