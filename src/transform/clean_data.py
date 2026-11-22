@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from src.main import logger
 
 
 def parse_datetime(value):
@@ -82,9 +83,13 @@ def transform(repositories):
 
         cleaned_repositories.append(cleaned)
 
-    print(f"Input repositories: {len(repositories)}")
-    print(f"Cleaned repositories: {len(cleaned_repositories)}")
-    print(f"Rejected repositories: {rejected}")
-    print(f"Duplicate repositories: {duplicates}")
+    logger.info("Input repositories: %s", len(repositories))
+    logger.info("Cleaned repositories: %s", len(cleaned_repositories))
+
+    if rejected > 0:
+        logger.warning("Rejected repositories: %s", rejected)
+
+    if duplicates > 0:
+        logger.warning("Duplicate repositories: %s", duplicates)
 
     return cleaned_repositories

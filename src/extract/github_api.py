@@ -5,6 +5,8 @@ import math
 import uuid
 import requests
 
+from src.main import logger
+
 
 def extract(max_results=1000):
     # ED: GitHub Search API maximum: 1,000 results per query
@@ -73,11 +75,7 @@ def extract(max_results=1000):
                     else:
                         wait_seconds = 60
 
-                    print(
-                        f"Rate limit reached. "
-                        f"Waiting {wait_seconds} seconds..."
-                    )
-
+                    logger.warning("Rate limit reached. Waiting %s seconds...", wait_seconds)
                     time.sleep(wait_seconds)
                     continue
 
@@ -101,11 +99,10 @@ def extract(max_results=1000):
             })
 
             repositories.extend(items)
-
-            print(f"Page {page}: fetched {len(items)} total {len(repositories)}")
+            logger.info("Page %s: fetched %s items, total repositories so far: %s", page, len(items), len(repositories))
 
             if data.get("incomplete_results"):
-                print("Warning: GitHub returned incomplete results.")
+                logger.info("Warning: GitHub returned incomplete results.")
 
             # ED: Stop when we have reached the available results
             if page * per_page >= min(total_count, 1000):
@@ -128,7 +125,7 @@ if __name__ == "__main__":
 
     result = extract(max_results=250)
 
-    print("\nExtraction completed!")
-    print("Batch ID:", result["batch_id"])
-    print("Repositories:", len(result["repositories"]))
-    print("Raw API pages:", len(result["raw_pages"]))
+    logger.info("\nExtraction completed!")
+    logger.info("Extraction completed. Batch ID: %s", result["batch_id"])
+    logger.info("Repositories: %s", len(result["repositories"]))
+    logger.info("Raw API pages: %s", len(result["raw_pages"]))

@@ -3,10 +3,11 @@ import os
 import json
 import pyodbc
 from sqlalchemy import URL, create_engine, text
+from src.main import logger
 
 
 def get_engine():
-    # ED: use your credential details below:
+    # ED This is production ready:
     db_url = URL.create(
         drivername="mssql+pyodbc",
         username=os.getenv("MSSQL_USER"),
@@ -17,19 +18,19 @@ def get_engine():
         query={
             "driver": os.getenv(
                 "MSSQL_DRIVER",
-                "ODBC Driver 17 for SQL Server"
+                "ODBC Driver 18 for SQL Server"
             ),
             "TrustServerCertificate": "yes"
         }
     )
-
-    return create_engine(db_url)
+    engine = create_engine(db_url)
+    return engine
 
 
 def load_bronze(raw_pages):
 
     if not raw_pages:
-        print("No raw API responses to load.")
+        logger.info("No raw API responses to load.")
         return 0
 
     insert_query = text("""
@@ -70,11 +71,7 @@ def load_bronze(raw_pages):
         with engine.begin() as conn:
             conn.execute(insert_query, records)
 
-        print(
-            f"Bronze loading completed: "
-            f"{len(records)} API responses loaded."
-        )
-
+        logger.info("Bronze loading completed. API responses loaded: %s", len(records))
         return len(records)
 
     finally:
@@ -84,7 +81,7 @@ def load_bronze(raw_pages):
 def load_silver(repositories):
 
     if not repositories:
-        print("No repositories to load into Silver.")
+        logger.info("No repositories to load into Silver.")
         return 0
 
     engine = get_engine()
@@ -188,10 +185,7 @@ def load_silver(repositories):
                 text("SELECT COUNT(*) FROM silver.repositories")
             ).scalar_one()
 
-        print(
-            f"Silver loading completed. "
-            f"Total repositories in Silver: {total}"
-        )
+        logger.info("Silver loading completed. Total repositories in Silver: %s", total)
 
         return total
 
@@ -212,7 +206,8 @@ def load_gold_snapshot():
                 stargazers_count,
                 forks_count,
                 open_issues_count,
-                size_kb
+                size_kb,
+                language
             FROM silver.repositories
         ) AS source
         ON target.repository_id = source.repository_id
@@ -224,6 +219,7 @@ def load_gold_snapshot():
                 forks_count = source.forks_count,
                 open_issues_count = source.open_issues_count,
                 size_kb = source.size_kb,
+                language = source.language,
                 snapshot_at = SYSUTCDATETIME()
 
         WHEN NOT MATCHED BY TARGET THEN
@@ -233,7 +229,8 @@ def load_gold_snapshot():
                 stargazers_count,
                 forks_count,
                 open_issues_count,
-                size_kb
+                size_kb,
+                language
             )
             VALUES (
                 source.repository_id,
@@ -241,7 +238,8 @@ def load_gold_snapshot():
                 source.stargazers_count,
                 source.forks_count,
                 source.open_issues_count,
-                source.size_kb
+                source.size_kb,
+                source.language
             );
 
         SELECT COUNT(*)
@@ -262,10 +260,11 @@ def load_gold_snapshot():
                 """)
             ).scalar_one()
 
-        print(
-            f"Gold snapshot completed. "
-            f"Repositories in today's snapshot: {total}"
-        )
+        # print(
+        #     f"Gold snapshot completed. "
+        #     f"Repositories in today's snapshot: {total}"
+        # )
+        logger.info("Gold snapshot completed. Repositories in today's snapshot: %s", total)
 
         return total
 
