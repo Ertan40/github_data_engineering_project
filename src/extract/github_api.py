@@ -1,11 +1,11 @@
-
 import os
 import time
 import math
 import uuid
 import requests
+import logging
 
-from src.main import logger
+logger = logging.getLogger(__name__)
 
 
 def extract(max_results=1000):
@@ -24,7 +24,6 @@ def extract(max_results=1000):
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "GitHub_Data_Engineering_Project"
     }
-
     # ED: Optional authentication
     token = os.getenv("GITHUB_TOKEN")
     if token:
@@ -32,7 +31,6 @@ def extract(max_results=1000):
 
     repositories = []
     raw_pages = []
-
     page = 1
     batch_id = str(uuid.uuid4())
 
@@ -49,40 +47,59 @@ def extract(max_results=1000):
             }
 
             while True:
-                response = session.get(url, headers=headers, params=params, timeout=30)
-                # ED: Handle GitHub rate limits
-                if response.status_code in (403, 429):
-                    remaining = response.headers.get("X-RateLimit-Remaining")
+                try:
+                    response = session.get(url, headers=headers, params=params, timeout=30)
+                    # ED: Handle GitHub rate limits
+                    if response.status_code in (403, 429):
+                        remaining = response.headers.get("X-RateLimit-Remaining")
 
-                    is_rate_limited = (
-                        response.status_code == 429
-                        or remaining == "0"
-                        or "rate limit" in response.text.lower()
-                    )
-
-                    if not is_rate_limited:
-                        response.raise_for_status()
-
-                    retry_after = response.headers.get("Retry-After")
-                    reset_time = response.headers.get("X-RateLimit-Reset")
-
-                    if retry_after:
-                        wait_seconds = int(retry_after)
-                    elif reset_time:
-                        wait_seconds = max(
-                            1, int(reset_time) - int(time.time()) + 1
+                        is_rate_limited = (
+                                response.status_code == 429
+                                or remaining == "0"
+                                or "rate limit" in response.text.lower()
                         )
-                    else:
-                        wait_seconds = 60
 
-                    logger.warning("Rate limit reached. Waiting %s seconds...", wait_seconds)
-                    time.sleep(wait_seconds)
-                    continue
+                        if not is_rate_limited:
+                            response.raise_for_status()
 
-                response.raise_for_status()
-                break
+                        retry_after = response.headers.get("Retry-After")
+                        reset_time = response.headers.get("X-RateLimit-Reset")
 
-            data = response.json()
+                        if retry_after:
+                            wait_seconds = int(retry_after)
+                        elif reset_time:
+                            wait_seconds = max(
+                                1, int(reset_time) - int(time.time()) + 1
+                            )
+                        else:
+                            wait_seconds = 60
+
+                        logger.warning("Rate limit reached. Waiting %s seconds...", wait_seconds)
+                        time.sleep(wait_seconds)
+                        continue
+
+                    response.raise_for_status()
+                    break
+                except requests.exceptions.Timeout:
+                    logger.exception("GitHub API request timed out.")
+                    raise
+
+                except requests.exceptions.ConnectionError:
+                    logger.exception("Could not connect to GitHub API.")
+                    raise
+
+                except requests.exceptions.HTTPError:
+                    logger.exception("GitHub API returned an HTTP error. Status: %s", response.status_code)
+                    raise
+                except requests.exceptions.RequestException:
+                    logger.exception("Unexpected GitHub API request error.")
+                    raise
+
+            try:
+                data = response.json()
+            except requests.exceptions.JSONDecodeError:
+                logger.exception("GitHub API returned an invalid JSON response.")
+                raise
             items = data.get("items") or []
             total_count = data.get("total_count", 0)
 
@@ -102,7 +119,7 @@ def extract(max_results=1000):
             logger.info("Page %s: fetched %s items, total repositories so far: %s", page, len(items), len(repositories))
 
             if data.get("incomplete_results"):
-                logger.info("Warning: GitHub returned incomplete results.")
+                logger.warning("Warning: GitHub returned incomplete results.")
 
             # ED: Stop when we have reached the available results
             if page * per_page >= min(total_count, 1000):
