@@ -1,0 +1,147 @@
+
+x-airflow-common: &airflow-common
+  build: .
+  image: github-etl-airflow:3.4.0
+
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres/${AIRFLOW_DB_NAME}
+
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__PARALLELISM: "2"
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "2"
+
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "${AIRFLOW_ADMIN_USER:-admin}:admin"
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/config/simple_auth_manager_passwords.json.generated
+
+    MSSQL_HOST: ${MSSQL_HOST}
+    MSSQL_PORT: ${MSSQL_PORT}
+    MSSQL_DATABASE: ${MSSQL_DATABASE}
+    MSSQL_USER: ${MSSQL_USER}
+    MSSQL_PASSWORD: ${MSSQL_PASSWORD}
+    MSSQL_DRIVER: ${MSSQL_DRIVER}
+
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./config:/opt/airflow/config
+    - ./plugins:/opt/airflow/plugins
+    - ./src:/opt/airflow/src
+
+  user: "${AIRFLOW_UID:-50000}:0"
+
+  networks:
+    - github_etl_network
+
+
+services:
+
+  # Airflow metadata database
+  postgres:
+    image: postgres:16
+
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${AIRFLOW_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+    restart: unless-stopped
+
+    networks:
+      - github_etl_network
+
+
+  # Initialize Airflow database
+  airflow-init:
+    <<: *airflow-common
+
+    command: bash -c "airflow db migrate"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    restart: "no"
+
+
+  # Airflow API server / Web UI
+  airflow-apiserver:
+    <<: *airflow-common
+
+    command: api-server
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - http://localhost:8080/api/v2/monitor/health
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    restart: unless-stopped
+
+
+  # Airflow scheduler
+  airflow-scheduler:
+    <<: *airflow-common
+
+    command: scheduler
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+
+
+  # Airflow DAG processor
+  airflow-dag-processor:
+    <<: *airflow-common
+
+    command: dag-processor
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+
+
+volumes:
+  postgres_data:
+
+
+networks:
+  github_etl_network:
+    external: true
+    name: github_etl_network
