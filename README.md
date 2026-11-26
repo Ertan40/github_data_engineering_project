@@ -194,6 +194,9 @@ Airflow provides:
 
 The Airflow metadata database runs separately in PostgreSQL, while the actual ETL data is stored in Microsoft SQL Server.
 
+1. <b>Airflow</b>:
+    - <p><img src="images/Github_Airflow.png" alt="Github_Airflow" width="800px"></p>
+
 ## Database Architecture
 
 The project uses three SQL Server schemas:
